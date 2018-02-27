@@ -1,21 +1,16 @@
-import usocket
+import nbwebserver
+import utime
 
-ls = usocket.socket()
-ls.setblocking(False)
-ls.bind(('0.0.0.0', 80))
-ls.listen(1)
+server = nbwebserver.WebServer()
 
-s, addr = None, None
+
+def lightsHandler(req, resp):
+    pass
+
+
+server.AddHandler("/lights", lightsHandler)
+
 
 while True:
-    try:
-        print(".", end='')
-        s, addr = ls.accept()
-        break
-    except OSError:
-        pass
-
-
-print(s, addr)
-
-s.close()
+    server.Update()
+    utime.sleep_ms(10)
