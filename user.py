@@ -10,6 +10,7 @@ def lightsHandler(req, resp):
 
 server.AddHandler("/lights", lightsHandler)
 
+server.Start()
 
 while True:
     server.Update()

@@ -39,12 +39,11 @@ def _nb_send(sock, data):
 class WebServer:
     def __init__(self, port=80):
         self.listenAddr = socket.getaddrinfo('0.0.0.0', port)[0][-1]
-        self.httpMethods = [b'GET', b'PUT']
         self.activeRequests = []
         self.requestHandlers = {}
+        self.listenSocket = socket.socket()
 
     def Start(self):
-        self.listenSocket = socket.socket()
         self.listenSocket.setblocking(False)
         self.listenSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listenSocket.bind(self.listenAddr)
@@ -56,23 +55,50 @@ class WebServer:
             r = Request(sock, addr, self.requestHandlers)
             self.activeRequests.append(r)
 
-        for r in self.activeRequests:
-            r.Update()
+        for i in range(len(self.activeRequests)-1, -1, -1):
+            if self.activeRequests[i].Update() == Request.MODE_DONE:
+                del self.activeRequests[i]
 
     def AddHandler(self, path, handler):
         self.requestHandlers[path] = handler
 
 
 class Request:
+
+    MODE_GOT_CONNECTION = 1
+    MODE_GOT_REQUEST = 2
+    MODE_GOT_HEADER = 3
+    MODE_DONE = 4
+
     def __init__(self, sock, addr, handlers):
         self.sock = sock
         self.addr = addr
         self.handlers = handlers
-        self.reqTimeout =
+        self.reqTimeout = CountdownTimer(1000)
+        self.mode = Request.MODE_GOT_CONNECTION
+        self.buffer = b''
+
+    def _parseLine(self, line):
+        print("line ", line)
+        if len(line) == 0:
+            self.mode = Request.MODE_DONE
 
     def Update(self):
-        return
-        pass
+        if self.reqTimeout.hasExpired():
+            print("timeout")
+            self.mode = Request.MODE_DONE
+        else:
+            data, ok = _nb_recv(self.sock, 64)
+            if ok:
+                self.buffer += data
+                while True:
+                    eol = self.buffer.find(b'\r\n')
+                    if eol == -1:
+                        break
+                    self._parseLine(self.buffer[:eol].decode())
+                    self.buffer = self.buffer[eol+2:]
+
+        return self.mode
 
 
 class Response:
