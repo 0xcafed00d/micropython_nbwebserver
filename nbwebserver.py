@@ -1,5 +1,5 @@
 import errno
-import socket as socket
+import usocket as socket
 from timetools import CountdownTimer
 
 _nberrors = [errno.ETIMEDOUT, errno.EAGAIN, errno.EINPROGRESS, 118, 119]
@@ -63,6 +63,58 @@ class WebServer:
         self.requestHandlers[path] = handler
 
 
+class Response:
+    def __init__(self, sock):
+        self._sock = sock
+
+    def sendResponse(self, code):
+        s = "HTTP/1.0 {} {}\r\n\r\n".format(code, Response._codes.get(code))
+        _nb_send(self._sock, s)
+
+    _codes = {
+        100: 'Continue',
+        101: 'Switching Protocols',
+        200: 'OK',
+        201: 'Created',
+        202: 'Accepted',
+        203: 'Non-Authoritative Information',
+        204: 'No Content',
+        205: 'Reset Content',
+        206: 'Partial Content',
+        300: 'Multiple Choices',
+        301: 'Moved Permanently',
+        302: 'Found',
+        303: 'See Other',
+        304: 'Not Modified',
+        305: 'Use Proxy',
+        307: 'Temporary Redirect',
+        400: 'Bad Request',
+        401: 'Unauthorized',
+        402: 'Payment Required',
+        403: 'Forbidden',
+        404: 'Not Found',
+        405: 'Method Not Allowed',
+        406: 'Not Acceptable',
+        407: 'Proxy Authentication Required',
+        408: 'Request Timeout',
+        409: 'Conflict',
+        410: 'Gone',
+        411: 'Length Required',
+        412: 'Precondition Failed',
+        413: 'Request Entity Too Large',
+        414: 'Request-URI Too Long',
+        415: 'Unsupported Media Type',
+        416: 'Requested Range Not Satisfiable',
+        417: 'Expectation Failed',
+        500: 'Internal Server Error',
+        501: 'Not Implemented',
+        502: 'Bad Gateway',
+        503: 'Service Unavailable',
+        504: 'Gateway Timeout',
+        505: 'HTTP Version Not Supported',
+    }
+
+
 class Request:
 
     MODE_GOT_CONNECTION = 1
@@ -77,11 +129,45 @@ class Request:
         self.reqTimeout = CountdownTimer(1000)
         self.mode = Request.MODE_GOT_CONNECTION
         self.buffer = b''
+        self.header = {}
+        self.method = None
+        self.reqPath = None
+        self.query = None
+
+    def _handleRequest(self):
+        print(self.method)
+        print(self.reqPath)
+        print(self.query)
+        print(self.header)
+        handler = self.handlers.get(self.reqPath)
+        if handler is not None:
+            handler(self, Response(self.sock))
+        self.sock.close()
+        self.mode = Request.MODE_DONE
 
     def _parseLine(self, line):
         print("line ", line)
-        if len(line) == 0:
-            self.mode = Request.MODE_DONE
+        if self.mode == Request.MODE_GOT_CONNECTION:
+            r = line.split()
+            if len(r) == 3:
+                self.method = r[0]
+                reqParts = r[1].split('?')
+                self.reqPath = reqParts[0]
+                if len(reqParts) > 1:
+                    self.query = reqParts[1]
+            else:
+                self.mode = Request.MODE_DONE
+
+            self.mode = Request.MODE_GOT_REQUEST
+        elif self.mode == Request.MODE_GOT_REQUEST:
+            if len(line) == 0:
+                self.mode = Request.MODE_GOT_HEADER
+            else:
+                h = line.split()
+                self.header[h[0]] = h[1].strip()
+
+        if self.mode == Request.MODE_GOT_HEADER:
+            self._handleRequest()
 
     def Update(self):
         if self.reqTimeout.hasExpired():
@@ -99,7 +185,3 @@ class Request:
                     self.buffer = self.buffer[eol+2:]
 
         return self.mode
-
-
-class Response:
-    pass

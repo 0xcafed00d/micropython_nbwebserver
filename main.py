@@ -1,7 +1,9 @@
 import network
 import time
+import machine
 
 import wifi_config
+
 
 net = network.WLAN(network.STA_IF)
 net.active(True)

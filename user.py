@@ -5,10 +5,11 @@ server = nbwebserver.WebServer()
 
 
 def lightsHandler(req, resp):
-    pass
+    print("lights handler", req.query)
+    resp.sendResponse(200)
 
 
-server.AddHandler("/lights", lightsHandler)
+server.AddHandler("/light", lightsHandler)
 
 server.Start()
 
