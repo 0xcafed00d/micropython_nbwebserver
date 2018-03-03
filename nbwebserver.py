@@ -1,8 +1,17 @@
 import errno
+import utime
 import usocket as socket
-from timetools import CountdownTimer
 
 _nberrors = [errno.ETIMEDOUT, errno.EAGAIN, errno.EINPROGRESS, 118, 119]
+
+
+class Timeout:
+    def __init__(self, time_ms):
+        self.duration_ms = time_ms
+        self.start_time = utime.ticks_ms()
+
+    def hasExpired(self):
+        return utime.ticks_diff(utime.ticks_ms(), self.start_time) >= self.duration_ms
 
 
 def _nb_accept(sock):
@@ -71,6 +80,9 @@ class Response:
         s = "HTTP/1.0 {} {}\r\n\r\n".format(code, Response._codes.get(code))
         _nb_send(self._sock, s)
 
+    def sendOK(self):
+        self.sendResponse(200)
+
     _codes = {
         100: 'Continue',
         101: 'Switching Protocols',
@@ -126,7 +138,7 @@ class Request:
         self.sock = sock
         self.addr = addr
         self.handlers = handlers
-        self.reqTimeout = CountdownTimer(1000)
+        self.reqTimeout = Timeout(2000)
         self.mode = Request.MODE_GOT_CONNECTION
         self.buffer = b''
         self.header = {}
