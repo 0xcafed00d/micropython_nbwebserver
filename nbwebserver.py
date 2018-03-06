@@ -1,17 +1,9 @@
 import errno
-import utime
 import usocket as socket
+from timeout import Timeout
+
 
 _nberrors = [errno.ETIMEDOUT, errno.EAGAIN, errno.EINPROGRESS, 118, 119]
-
-
-class Timeout:
-    def __init__(self, time_ms):
-        self.duration_ms = time_ms
-        self.start_time = utime.ticks_ms()
-
-    def hasExpired(self):
-        return utime.ticks_diff(utime.ticks_ms(), self.start_time) >= self.duration_ms
 
 
 def _nb_accept(sock):
@@ -47,29 +39,30 @@ def _nb_send(sock, data):
 
 class WebServer:
     def __init__(self, port=80):
-        self.listenAddr = socket.getaddrinfo('0.0.0.0', port)[0][-1]
-        self.activeRequests = []
-        self.requestHandlers = {}
-        self.listenSocket = socket.socket()
+        self._listenAddr = socket.getaddrinfo('0.0.0.0', port)[0][-1]
+        self._activeRequests = []
+        self._requestHandlers = {}
+        self._listenSocket = socket.socket()
 
     def Start(self):
-        self.listenSocket.setblocking(False)
-        self.listenSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.listenSocket.bind(self.listenAddr)
-        self.listenSocket.listen(1)
+        self._listenSocket.setblocking(False)
+        self._listenSocket.setsockopt(
+            socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._listenSocket.bind(self._listenAddr)
+        self._listenSocket.listen(1)
 
     def Update(self):
-        sock, addr, ok = _nb_accept(self.listenSocket)
+        sock, addr, ok = _nb_accept(self._listenSocket)
         if ok:
-            r = Request(sock, addr, self.requestHandlers)
-            self.activeRequests.append(r)
+            r = Request(sock, addr, self._requestHandlers)
+            self._activeRequests.append(r)
 
-        for i in range(len(self.activeRequests)-1, -1, -1):
-            if self.activeRequests[i].Update() == Request.MODE_DONE:
-                del self.activeRequests[i]
+        for i in range(len(self._activeRequests)-1, -1, -1):
+            if self._activeRequests[i].Update() == Request.MODE_DONE:
+                del self._activeRequests[i]
 
     def AddHandler(self, path, handler):
-        self.requestHandlers[path] = handler
+        self._requestHandlers[path] = handler
 
 
 class Response:
@@ -135,65 +128,77 @@ class Request:
     MODE_DONE = 4
 
     def __init__(self, sock, addr, handlers):
-        self.sock = sock
-        self.addr = addr
-        self.handlers = handlers
-        self.reqTimeout = Timeout(2000)
-        self.mode = Request.MODE_GOT_CONNECTION
-        self.buffer = b''
+        self._sock = sock
+        self._addr = addr
+        self._handlers = handlers
+        self._reqTimeout = Timeout(2000)
+        self._mode = Request.MODE_GOT_CONNECTION
+        self._buffer = b''
+
         self.header = {}
         self.method = None
         self.reqPath = None
         self.query = None
 
     def _handleRequest(self):
-        print(self.method)
-        print(self.reqPath)
-        print(self.query)
-        print(self.header)
-        handler = self.handlers.get(self.reqPath)
+        handler = self._handlers.get(self.reqPath)
         if handler is not None:
-            handler(self, Response(self.sock))
-        self.sock.close()
-        self.mode = Request.MODE_DONE
+            handler(self, Response(self._sock))
+        else:
+            Response(self._sock).sendResponse(404)
+
+        self._sock.close()
+        self._mode = Request.MODE_DONE
+
+    def _parseQuery(self, queryStr):
+        q = {}
+        pairs = queryStr.split('&')
+        for pair in pairs:
+            nk = pair.split('=')
+            if len(nk) == 2:
+                q[nk[0]] = nk[1]
+        return q
+
+    def _parseRequestLine(self, reqLine):
+        r = reqLine.split()
+        if len(r) != 3:
+            return Request.MODE_DONE
+
+        self.method = r[0]
+        reqParts = r[1].split('?')
+        self.reqPath = reqParts[0]
+        if len(reqParts) > 1:
+            self.query = self._parseQuery(reqParts[1])
+
+        return Request.MODE_GOT_REQUEST
 
     def _parseLine(self, line):
         print("line ", line)
-        if self.mode == Request.MODE_GOT_CONNECTION:
-            r = line.split()
-            if len(r) == 3:
-                self.method = r[0]
-                reqParts = r[1].split('?')
-                self.reqPath = reqParts[0]
-                if len(reqParts) > 1:
-                    self.query = reqParts[1]
-            else:
-                self.mode = Request.MODE_DONE
-
-            self.mode = Request.MODE_GOT_REQUEST
-        elif self.mode == Request.MODE_GOT_REQUEST:
+        if self._mode == Request.MODE_GOT_CONNECTION:
+            self._mode = self._parseRequestLine(line)
+        elif self._mode == Request.MODE_GOT_REQUEST:
             if len(line) == 0:
-                self.mode = Request.MODE_GOT_HEADER
+                self._mode = Request.MODE_GOT_HEADER
             else:
-                h = line.split()
+                h = line.split(":")
                 self.header[h[0]] = h[1].strip()
 
-        if self.mode == Request.MODE_GOT_HEADER:
+        if self._mode == Request.MODE_GOT_HEADER:
             self._handleRequest()
 
     def Update(self):
-        if self.reqTimeout.hasExpired():
+        if self._reqTimeout.hasExpired():
             print("timeout")
-            self.mode = Request.MODE_DONE
+            self._mode = Request.MODE_DONE
         else:
-            data, ok = _nb_recv(self.sock, 64)
+            data, ok = _nb_recv(self._sock, 64)
             if ok:
-                self.buffer += data
+                self._buffer += data
                 while True:
-                    eol = self.buffer.find(b'\r\n')
+                    eol = self._buffer.find(b'\r\n')
                     if eol == -1:
                         break
-                    self._parseLine(self.buffer[:eol].decode())
-                    self.buffer = self.buffer[eol+2:]
+                    self._parseLine(self._buffer[:eol].decode())
+                    self._buffer = self._buffer[eol+2:]
 
-        return self.mode
+        return self._mode

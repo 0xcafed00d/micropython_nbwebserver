@@ -3,6 +3,7 @@ import utime
 import machine
 
 import nbwebserver
+from timeout import Timeout
 import wifi_config
 
 # ------------------------------------------------------------------------
@@ -17,12 +18,17 @@ led.value(1)
 # connect to network
 # ------------------------------------------------------------------------
 
+timeout = Timeout(10000)
+
 net = network.WLAN(network.STA_IF)
 net.active(True)
 net.connect(wifi_config.wifi_ssid, wifi_config.wifi_pw)
 
 while not net.isconnected():
+    led.value(not led.value())
     utime.sleep_ms(100)
+    if timeout.hasExpired():
+        machine.reset()
 
 print(net.ifconfig())
 
@@ -34,13 +40,14 @@ print(net.ifconfig())
 # create webserver
 server = nbwebserver.WebServer()
 
+rate = 1000
 
 # handler for /led requests
+
+
 def ledHandler(request, response):
-    if request.query == "command=on":
-        led.value(0)
-    elif request.query == "command=off":
-        led.value(1)
+    print(request.header)
+    print(request.query)
     response.sendOK()
 
 
@@ -51,6 +58,10 @@ server.AddHandler("/led", ledHandler)
 server.Start()
 
 # loop forever updating webserver, and doing what else needs to be done
+
 while True:
     server.Update()
     utime.sleep_ms(10)
+    if timeout.hasExpired():
+        timeout = Timeout(rate)
+        led.value(not led.value())
