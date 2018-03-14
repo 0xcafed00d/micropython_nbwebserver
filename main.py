@@ -10,7 +10,7 @@ import wifi_config
 # configure LED - pin number will be different on different boards
 # ------------------------------------------------------------------------
 
-led = machine.Pin(22, machine.Pin.OUT)
+led = machine.Pin(2, machine.Pin.OUT)
 led.value(1)
 
 
@@ -46,9 +46,15 @@ rate = 1000
 
 
 def ledHandler(request, response):
+    global rate
     print(request.header)
     print(request.query)
-    response.sendOK()
+    r = request.query.get("rate")
+    if r is not None:
+        rate = int(r)
+        response.sendOK()
+    else:
+        response.sendResponse(400)
 
 
 # add handler to server

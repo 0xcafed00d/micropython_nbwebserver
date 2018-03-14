@@ -138,12 +138,16 @@ class Request:
         self.header = {}
         self.method = None
         self.reqPath = None
-        self.query = None
+        self.query = {}
 
     def _handleRequest(self):
         handler = self._handlers.get(self.reqPath)
         if handler is not None:
-            handler(self, Response(self._sock))
+            try:
+                handler(self, Response(self._sock))
+            except Exception as e:
+                print(e)
+                Response(self._sock).sendResponse(500)
         else:
             Response(self._sock).sendResponse(404)
 
